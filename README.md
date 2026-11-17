@@ -1,343 +1,313 @@
-# Glob-Gusters Video-Club · Base de Datos Relacional
-
-Proyecto de base de datos relacional para la cadena de Video-Clubs **Glob-Gusters**,
-desarrollado como material de apoyo para la asignatura de Base de Datos (Ingeniería de
-Sistemas). El ejercicio original y su resolución paso a paso (identificación de
-entidades, resolución de relaciones N-M, campos multivalorados y llaves) se encuentran
-documentados en `docs/relational-database.pdf`.
-
-Motor de base de datos: **MariaDB** sobre entorno **XAMPP**.
-
-## Descripción del ejercicio
-
-Glob-Gusters necesita una base de datos para gestionar el alquiler de películas. El
-negocio maneja la siguiente información:
-
-- Cada **película** tiene título, año, nacionalidad, productora y un director.
-- En una película participan varios **actores** (con su nacionalidad y sexo), cada uno
-  con un rol (Principal o Secundario).
-- Cada película tiene uno o varios **ejemplares** físicos, diferenciados por número y
-  con un estado de conservación.
-- Los **clientes** (socios) alquilan ejemplares mediante **rentas**, que registran la
-  fecha de inicio y de devolución.
-- Un socio debe estar avalado por otro socio ya existente.
-- Un socio puede tener, como máximo, **4 ejemplares** alquilados sin devolver al mismo
-  tiempo (regla de negocio implementada mediante un `TRIGGER`).
-
-### Modelo normalizado (Tercera Forma Normal — 3FN)
-
-Para llegar a 3FN se extrajeron como catálogos independientes los campos que en el
-enunciado original eran multivaluados o se repetían como texto libre
-(`nacionalidad`, `productora`, `estado`), y se resolvieron las relaciones N-M mediante
-tablas intermedias con llave subrogada autoincremental (`reparto`, `ejemplar_renta`).
-
-| Tabla             | Llave primaria         | Descripción                                            |
-|-------------------|-------------------------|---------------------------------------------------------|
-| `nacionalidad`    | `Nacionalidad_ID`       | Catálogo de países de origen.                            |
-| `productora`      | `Productora_ID`         | Catálogo de casas productoras.                           |
-| `estado`          | `Estado_ID`             | Catálogo de estados de conservación de un ejemplar.      |
-| `director`        | `Director_ID`           | Directores de películas.                                 |
-| `pelicula`        | `Pelicula_ID`           | Catálogo de películas.                                   |
-| `actor`           | `Actor_ID`               | Actores.                                                 |
-| `reparto`         | `Reparto_ID`             | Resuelve la relación N-M película ↔ actor.               |
-| `cliente`         | `Cliente_ID`             | Socios del video-club (con aval autorreferenciado).      |
-| `ejemplar`        | `Ejemplar_ID`            | Copias físicas de cada película.                         |
-| `renta`           | `Renta_ID`               | Encabezado de cada alquiler.                              |
-| `ejemplar_renta`  | `Ejemplar_Renta_ID`      | Resuelve la relación N-M renta ↔ ejemplar.                |
-
-El detalle completo de cada relación (tabla origen, campo FK, tabla destino, campo PK
-y cardinalidad) está documentado como bloque de comentarios dentro de
-`sql/mariadb/glob_gusters.sql`.
-
-## Contenido del repositorio
-
-```
-glob-gusters-videoclub/
-├── docs/
-│   ├── relational-database.pdf          # Taller resuelto: diseño E-R de Glob-Gusters
-│   ├── sql_scripts_commands.pdf         # Resumen de los grupos de comandos SQL (DDL/DML/DQL/DCL/TCL/VDL)
-│   └── steps-create-project-database.pdf# Orden de ejecución recomendado del proyecto
-├── sql/
-│   └── mariadb/
-│       ├── glob_gusters.sql             # DDL: base de datos, tablas, constraints y trigger
-│       ├── glob_gusters_insert.sql      # DML: datos de prueba para todas las tablas
-│       ├── check-mariadb.sql            # Script de diagnóstico del servidor MariaDB
-│       └── commands/
-│           ├── 01_DDL.sql               # CREATE / ALTER / DROP de ejemplo
-│           ├── 02_DML.sql               # INSERT / UPDATE / DELETE de ejemplo
-│           ├── 03_DQL.sql               # SELECT / JOIN / GROUP BY de ejemplo
-│           ├── 04_VDL.sql               # CREATE VIEW / consulta / DROP VIEW de ejemplo
-│           ├── 05_DCL.sql               # CREATE USER / GRANT / REVOKE de ejemplo
-│           └── 06_TCL.sql               # START TRANSACTION / SAVEPOINT / COMMIT / ROLLBACK
-├── tests/
-│   └── mariadb/
-│       └── glob_gusters_test.sql        # Pruebas de integridad integral del proyecto
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
-## Requisitos previos
-
-- [XAMPP](https://www.apachefriends.org/) con el módulo **MySQL/MariaDB** habilitado.
-- Cliente `mariadb` (o `mysql`) disponible en la terminal. Ruta típica según sistema
-  operativo:
-  - **Windows:** `C:\xampp\mysql\bin\mariadb.exe`
-  - **macOS:** `/Applications/XAMPP/xamppfiles/bin/mariadb`
-  - **Linux:** `/opt/lampp/bin/mariadb`
-- Visual Studio Code con la extensión "MySQL" o "SQLTools" (opcional, para editar).
-- MySQL Workbench (opcional, para la ingeniería inversa del modelo E-R).
-- Git y una cuenta de GitHub (opcional, para control de versiones).
-
-## Ejecución paso a paso en XAMPP MariaDB
-
-Todos los ejemplos usan la misma conexión en los tres sistemas operativos
-(`-u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4`); sólo cambia la
-ruta del binario y cómo el shell redirige la entrada estándar. Por defecto, XAMPP
-configura el usuario `root` **sin contraseña**: cuando el comando pida `Enter password:`,
-basta con presionar Enter.
-
-### 1. Iniciar los servicios
-
-**Windows y macOS:** abre el **Panel de Control de XAMPP** y arranca el módulo
-**MySQL** (usa el motor MariaDB internamente). Verifica que el estado quede en verde
-("Running").
-
-**Linux:** inicia XAMPP desde la terminal con:
-
-```bash
-sudo /opt/lampp/lampp start
-```
-
-o abre el panel gráfico con `sudo /opt/lampp/manager-linux-x64.run` si está instalado.
-Verifica que el módulo MySQL/MariaDB quede activo.
-
-### 2. Verificar que el cliente `mariadb` es accesible
-
-**Windows (PowerShell):**
-
-```powershell
-# Agrega C:\xampp\mysql\bin al PATH si el comando no se reconoce.
-C:\xampp\mysql\bin\mariadb.exe --version
-```
-
-**macOS:**
-
-```bash
-/Applications/XAMPP/xamppfiles/bin/mariadb --version
-# o, si ya agregaste esa ruta al PATH:
-mariadb --version
-```
-
-**Linux:**
-
-```bash
-/opt/lampp/bin/mariadb --version
-# o, si ya agregaste esa ruta al PATH:
-mariadb --version
-```
-
-También puedes usar el script de diagnóstico incluido en el proyecto,
-`sql/mariadb/check-mariadb.sql`, para confirmar de un vistazo:
-
-- Versión, host y puerto del servidor.
-- Sesión actual (usuario autenticado, base de datos seleccionada) y procesos
-  activos.
-- Estado del servidor (uptime, conexiones, consultas totales) y configuración
-  relevante (charset, collation, `sql_mode`).
-- Motores de almacenamiento disponibles (confirma que InnoDB, requerido por el
-  proyecto, esté activo).
-- Tablas, vistas y triggers ya creados en `glob_gusters`, y un resumen de filas
-  por tabla.
-- Usuarios del servidor y su estado de seguridad, sin exponer contraseñas.
-
-Ajusta la ruta del binario según tu sistema operativo (como en el paso 3) y usa
-siempre **`--force`**: el script está pensado para poder correrse en cualquier
-momento (incluso antes de crear la base de datos del proyecto), y algunas de sus
-secciones esperan condiciones que pueden no cumplirse todavía —por ejemplo, que
-`glob_gusters` ya exista, o que el *event scheduler* esté activo—; sin `--force`
-el cliente se detendría en la primera de ellas. El encabezado del script documenta
-las tres limitaciones conocidas del entorno y por qué no son errores del proyecto.
-
-```bash
-mariadb -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 \
-    --force < sql/mariadb/check-mariadb.sql
-```
-
-### 3. Ejecutar los scripts en orden
-
-El orden de ejecución **es obligatorio**, porque cada script depende de que la
-estructura o los datos del anterior ya existan (ver `docs/steps-create-project-database.pdf`).
-
-**Windows (PowerShell)** — PowerShell no admite `<` para redirigir un archivo a la
-entrada estándar, por lo que se usa `Get-Content` junto con una función auxiliar:
-
-```powershell
-function Invoke-GlobGustersScript($Path) {
-    Get-Content $Path | & "C:\xampp\mysql\bin\mariadb.exe" -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4
-}
-
-Invoke-GlobGustersScript "sql\mariadb\glob_gusters.sql"          # 1. Base de datos, tablas, constraints y trigger de negocio
-Invoke-GlobGustersScript "sql\mariadb\glob_gusters_insert.sql"   # 2. Datos de prueba
-Invoke-GlobGustersScript "sql\mariadb\commands\01_DDL.sql"       # 3. CREATE / ALTER / DROP de ejemplo
-Invoke-GlobGustersScript "sql\mariadb\commands\02_DML.sql"       # 4. INSERT / UPDATE / DELETE de ejemplo
-Invoke-GlobGustersScript "sql\mariadb\commands\03_DQL.sql"       # 5. SELECT / JOIN / GROUP BY de ejemplo
-Invoke-GlobGustersScript "sql\mariadb\commands\04_VDL.sql"       # 6. CREATE VIEW / consulta / DROP VIEW de ejemplo
-Invoke-GlobGustersScript "sql\mariadb\commands\05_DCL.sql"       # 7. CREATE USER / GRANT / REVOKE de ejemplo
-Invoke-GlobGustersScript "sql\mariadb\commands\06_TCL.sql"       # 8. START TRANSACTION / SAVEPOINT / COMMIT / ROLLBACK
-```
-
-**macOS:**
-
-```bash
-run_mariadb() {
-    /Applications/XAMPP/xamppfiles/bin/mariadb -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 "$@"
-}
-
-run_mariadb < sql/mariadb/glob_gusters.sql          # 1. Base de datos, tablas, constraints y trigger de negocio
-run_mariadb < sql/mariadb/glob_gusters_insert.sql   # 2. Datos de prueba
-run_mariadb < sql/mariadb/commands/01_DDL.sql       # 3. CREATE / ALTER / DROP de ejemplo
-run_mariadb < sql/mariadb/commands/02_DML.sql       # 4. INSERT / UPDATE / DELETE de ejemplo
-run_mariadb < sql/mariadb/commands/03_DQL.sql       # 5. SELECT / JOIN / GROUP BY de ejemplo
-run_mariadb < sql/mariadb/commands/04_VDL.sql       # 6. CREATE VIEW / consulta / DROP VIEW de ejemplo
-run_mariadb < sql/mariadb/commands/05_DCL.sql       # 7. CREATE USER / GRANT / REVOKE de ejemplo
-run_mariadb < sql/mariadb/commands/06_TCL.sql       # 8. START TRANSACTION / SAVEPOINT / COMMIT / ROLLBACK
-```
-
-**Linux:**
-
-```bash
-run_mariadb() {
-    /opt/lampp/bin/mariadb -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 "$@"
-}
-
-run_mariadb < sql/mariadb/glob_gusters.sql          # 1. Base de datos, tablas, constraints y trigger de negocio
-run_mariadb < sql/mariadb/glob_gusters_insert.sql   # 2. Datos de prueba
-run_mariadb < sql/mariadb/commands/01_DDL.sql       # 3. CREATE / ALTER / DROP de ejemplo
-run_mariadb < sql/mariadb/commands/02_DML.sql       # 4. INSERT / UPDATE / DELETE de ejemplo
-run_mariadb < sql/mariadb/commands/03_DQL.sql       # 5. SELECT / JOIN / GROUP BY de ejemplo
-run_mariadb < sql/mariadb/commands/04_VDL.sql       # 6. CREATE VIEW / consulta / DROP VIEW de ejemplo
-run_mariadb < sql/mariadb/commands/05_DCL.sql       # 7. CREATE USER / GRANT / REVOKE de ejemplo
-run_mariadb < sql/mariadb/commands/06_TCL.sql       # 8. START TRANSACTION / SAVEPOINT / COMMIT / ROLLBACK
-```
-
-> Si prefieres usar `cmd.exe` en Windows en vez de PowerShell, la redirección `<`
-> funciona igual que en macOS/Linux:
-> `C:\xampp\mysql\bin\mariadb.exe -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < sql\mariadb\glob_gusters.sql`
-
-#### Ejecución segura: se puede repetir y desordenar sin miedo
-
-Todos los scripts del proyecto están diseñados para ejecutarse **varias veces y en
-secuencias no lineales** sin generar errores ni datos duplicados:
-
-- Toda `CREATE DATABASE`, `CREATE TABLE`, `CREATE TRIGGER`, `ADD COLUMN` y
-  `CREATE INDEX` usa `IF [NOT] EXISTS`.
-- `glob_gusters_insert.sql` localiza cada llave foránea por su nombre natural (país,
-  título+año, DNI, etc.) en vez de un ID numérico fijo, y protege cada fila con
-  `INSERT IGNORE` (tablas con `UNIQUE`) o `WHERE NOT EXISTS` (tablas sin `UNIQUE`
-  natural, como `director`/`actor`, o con trigger de negocio, como `ejemplar_renta`).
-- `02_DML.sql` y `06_TCL.sql` localizan sus registros por llave natural y verifican
-  si el dato de ejemplo ya existe antes de insertarlo, para no acumular préstamos
-  activos y terminar chocando con el trigger de máximo 4 ejemplares.
-- `03_DQL.sql` y `04_VDL.sql` son de sólo lectura o usan `CREATE OR REPLACE VIEW`.
-- `05_DCL.sql` usa `CREATE USER IF NOT EXISTS`; repetir el `GRANT`/`REVOKE` no falla.
-
-Esto se validó ejecutando los 8 scripts tres veces seguidas sin recrear la base de
-datos, y en una secuencia desordenada con repeticiones (`05 → 01 → 05 → insert →
-06 → 06 → 02 → 02 → glob_gusters.sql → 04 → 03`): en ambos casos, cero errores y los
-mismos conteos de filas en todas las tablas.
-
-### 4. Verificar la instalación desde phpMyAdmin (opcional)
-
-1. Abre `http://localhost/phpmyadmin` con XAMPP en ejecución.
-2. Selecciona la base de datos `glob_gusters` en el panel izquierdo.
-3. Confirma que existan las 11 tablas del modelo, las vistas `v_ejemplares_detalle` y
-   `v_clientes_con_aval`, y que la pestaña **Triggers** muestre los tres disparadores
-   de reglas de negocio:
-   - `trg_ejemplar_renta_max_4` (en `ejemplar_renta`): máximo 4 ejemplares activos
-     por socio.
-   - `trg_cliente_aval_diferente_insert` y `trg_cliente_aval_diferente_update` (en
-     `cliente`): un socio no puede ser su propio aval.
-
-### 5. Ejecutar las pruebas de integridad
-
-`tests/mariadb/glob_gusters_test.sql` verifica de punta a punta que el despliegue fue
-correcto: existencia de las 11 tablas y las 2 vistas, datos cargados en cada tabla,
-ausencia de registros huérfanos, cumplimiento de los tres triggers y del `CHECK` de
-fechas de `renta`, consistencia de las vistas y permisos de los usuarios creados en
-`05_DCL.sql`. Debe ejecutarse **con la bandera `--force`**, porque intencionalmente
-provoca errores esperados (inserciones que el motor debe rechazar) y necesita que la
-conexión continúe después de cada uno para poder verificarlos y limpiarlos:
-
-**Windows (PowerShell):**
-
-```powershell
-Get-Content tests\mariadb\glob_gusters_test.sql | & "C:\xampp\mysql\bin\mariadb.exe" -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 --force glob_gusters
-```
-
-**macOS:**
-
-```bash
-/Applications/XAMPP/xamppfiles/bin/mariadb -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 \
-    --force glob_gusters < tests/mariadb/glob_gusters_test.sql
-```
-
-**Linux:**
-
-```bash
-/opt/lampp/bin/mariadb -u root -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 \
-    --force glob_gusters < tests/mariadb/glob_gusters_test.sql
-```
-
-El resultado es una tabla con una fila por prueba (`PASS`/`FAIL`) y un resumen final
-con el total de pruebas aprobadas. El script no requiere procedimientos almacenados,
-por lo que funciona incluso en instalaciones de XAMPP con la tabla de sistema
-`mysql.proc` desactualizada (un problema común al reemplazar el `mysqld` incluido por
-una versión más reciente sin ejecutar `mysql_upgrade`).
-
-## Cómo subir este proyecto a GitHub
-
-Estos comandos de `git` son idénticos en Windows (PowerShell o cmd.exe), macOS y
-Linux:
-
-```bash
-git init
-git add .
-git commit -m "Primer commit: modelo normalizado Glob-Gusters"
-git branch -M main
-git remote add origin https://github.com/<usuario>/glob-gusters-videoclub.git
-git push -u origin main
-```
-
-## Protección de la rama `main`
-
-La rama `main` de este repositorio tiene activada la protección de rama de GitHub,
-con la siguiente configuración:
-
-| Regla | Estado |
+# Sistema de Nómina y Recursos Humanos
+
+Sistema de nómina y recursos humanos con base de datos en **MariaDB** y una aplicación de consola en **Python**. Gestiona empleados, contratos, asistencia y ausencias, y calcula la nómina con devengos, deducciones, prestaciones sociales, aportes del empleador y comprobantes de pago.
+
+Proyecto con fines académicos. Todo el cálculo vive en la base de datos (procedimiento almacenado, vistas y triggers); Python solo lo invoca y presenta los resultados, por lo que cualquier otra aplicación puede reutilizar la misma lógica.
+
+## Contenido
+
+- [Características](#características)
+- [Tecnologías](#tecnologías)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Instalación](#instalación)
+- [Aplicación en Python](#aplicación-en-python)
+- [Modelo de datos](#modelo-de-datos)
+- [Cálculo de la nómina](#cálculo-de-la-nómina)
+- [Seguridad y roles](#seguridad-y-roles)
+- [Scripts académicos](#scripts-académicos)
+- [Solución de problemas](#solución-de-problemas)
+- [Limitaciones y mejoras futuras](#limitaciones-y-mejoras-futuras)
+
+## Características
+
+**Base de datos**
+- Departamentos, cargos, empleados y contratos, con historial de cambios salariales.
+- Asistencia con horas extra y ausencias (vacaciones, permisos, incapacidades, licencias) con flujo de aprobación.
+- Cálculo de nómina por periodo con `sp_generar_nomina`:
+  - Devengos: salario proporcional, horas extra y auxilio de transporte.
+  - Deducciones del empleado: salud, pensión e impuesto.
+  - Prestaciones sociales: cesantías, intereses sobre cesantías, prima de servicios y vacaciones.
+  - Aportes del empleador: salud, pensión, riesgos laborales y caja de compensación.
+- Comprobantes de pago con numeración estable (`CP-AAAAMM-ID`).
+- Parámetros y porcentajes editables en tablas, sin tocar el código.
+- Auditoría automática mediante triggers y roles de seguridad.
+
+**Aplicación en Python**
+- Menú de consola con 12 opciones.
+- Alta de departamentos, cargos y empleados con validaciones (por ejemplo, el salario debe estar dentro del rango del cargo).
+- Registro de asistencia, solicitud y aprobación de ausencias.
+- Cálculo de nómina, resumen por departamento y costo laboral.
+- Comprobante de pago en texto y exportación a CSV compatible con Excel.
+- Consultas con parámetros (protección contra inyección SQL) y transacciones con COMMIT y ROLLBACK.
+
+## Tecnologías
+
+| Componente | Versión recomendada |
 |---|---|
-| Requiere Pull Request para fusionar cambios | ✅ Activado |
-| Aprobaciones mínimas por PR | **1** |
-| Se aplica también al propietario/administrador | ❌ Desactivado |
-| Permite `force-push` a `main` | ❌ Bloqueado |
-| Permite eliminar la rama `main` | ❌ Bloqueado |
+| MariaDB | 10.4 o superior (incluida en XAMPP) |
+| XAMPP | Apache, MariaDB y phpMyAdmin |
+| Python | 3.8 o superior (se recomienda 3.10+) |
+| PyMySQL | 1.1 o superior |
+| Editor | Visual Studio Code |
 
-En la práctica, esto significa:
+## Estructura del repositorio
 
-- **El propietario del repositorio** conserva permiso para hacer `git push` directo
-  a `main`, sin necesidad de abrir un Pull Request.
-- **Cualquier otro colaborador** (sin permisos de administrador) que quiera
-  modificar el proyecto o agregar una nueva funcionalidad debe crear una rama,
-  subir sus cambios y abrir un Pull Request contra `main`; ese PR necesita al menos
-  **una aprobación humana** antes de poder fusionarse.
+```
+nomina-rrhh/
+├─ nomina_rrhh.sql              # Estructura: base de datos, tablas, triggers, procedimiento, vistas y seguridad
+├─ insert_sistema_nomina.sql    # Datos iniciales y de prueba
+├─ python_app/                  # Aplicación de consola
+│  ├─ main.py                   # Menú principal
+│  ├─ services.py               # Operaciones: empleados, asistencia, ausencias y nómina
+│  ├─ reportes.py               # Tablas, comprobante en texto y exportación a CSV
+│  ├─ db.py                     # Conexión, transacciones y consultas con parámetros
+│  ├─ config.py                 # Datos de conexión
+│  ├─ test_conexion.py          # Prueba de conexión e instalación
+│  ├─ requirements.txt
+│  └─ README_python.md
+├─ scripts_academicos/          # Scripts por categoría SQL para estudiar la estructura
+│  ├─ 00_ejecutar_todo.sql
+│  ├─ 01_crear_base_datos.sql
+│  ├─ 02_datos_ficticios.sql
+│  ├─ 03_ddl.sql
+│  ├─ 04_dml.sql
+│  ├─ 05_dql.sql
+│  ├─ 06_vdl.sql
+│  ├─ 07_dcl.sql
+│  └─ 08_tcl.sql
+└─ README.md
+```
 
-Esta configuración se administra desde **Settings → Branches → Branch protection
-rules** en GitHub, o mediante la API:
+## Instalación
+
+### 1. Base de datos
+
+1. Abre el panel de XAMPP e inicia **Apache** y **MySQL** (en XAMPP, MySQL es MariaDB).
+2. Entra a `http://localhost/phpmyadmin` como `root`.
+3. Sin seleccionar ninguna base, ve a **Importar** y sube `nomina_rrhh.sql`.
+4. Selecciona la base `nomina_rrhh`, ve a **Importar** y sube `insert_sistema_nomina.sql`.
+
+> **Advertencia:** `nomina_rrhh.sql` elimina y vuelve a crear la base `nomina_rrhh`. Si lo importas de nuevo, debes volver a importar también `insert_sistema_nomina.sql`.
+
+También puedes usar la línea de comandos:
 
 ```bash
-gh api repos/<usuario>/glob-gusters-videoclub/branches/main/protection
+C:\xampp\mysql\bin\mysql -u root < nomina_rrhh.sql
+C:\xampp\mysql\bin\mysql -u root < insert_sistema_nomina.sql
 ```
+
+### 2. Aplicación en Python
+
+```bash
+cd python_app
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # Linux / macOS
+pip install -r requirements.txt
+python test_conexion.py
+python main.py
+```
+
+`test_conexion.py` debe mostrar la versión del servidor, 16 tablas, 8 vistas y los conteos de departamentos, cargos, periodos y empleados. Si alguno aparece como vacío, falta importar los datos.
+
+### 3. Conexión a la base de datos
+
+Valores por defecto de `python_app/config.py`:
+
+| Dato | Valor |
+|---|---|
+| host | `127.0.0.1` |
+| port | `3306` |
+| base de datos | `nomina_rrhh` |
+| usuario | `rrhh_nomina` |
+| contraseña | `Rrhh#2026` (de demostración) |
+
+Para usar otro usuario sin editar el código, por ejemplo `root` en XAMPP (que viene sin contraseña), define variables de entorno antes de ejecutar. En PowerShell:
+
+```powershell
+$env:NOMINA_DB_USER = "root"
+$env:NOMINA_DB_PASSWORD = ""
+python main.py
+```
+
+Variables disponibles: `NOMINA_DB_HOST`, `NOMINA_DB_PORT`, `NOMINA_DB_NAME`, `NOMINA_DB_USER` y `NOMINA_DB_PASSWORD`.
+
+## Aplicación en Python
+
+### Menú
+
+| Opción | Qué hace | Usa en la base de datos |
+|---|---|---|
+| Ver empleados activos | Lista empleados con cargo, departamento y salario | Vista `v_empleados_activos` |
+| Gestionar departamentos | Lista y crea departamentos | Tabla `departamentos` |
+| Gestionar cargos | Lista y crea cargos con su rango salarial | Tabla `cargos` |
+| Registrar empleado y contrato | Crea empleado y contrato en una sola transacción | Tablas `empleados` y `contratos` |
+| Registrar asistencia y horas extra | Guarda el registro diario | Tabla `asistencia` |
+| Solicitar ausencia | Crea una solicitud pendiente | Tabla `ausencias` |
+| Aprobar o rechazar ausencias | Resuelve solicitudes pendientes | Vista `v_ausencias_pendientes` |
+| Calcular nómina de un periodo | Genera nóminas, prestaciones, aportes y comprobantes | Procedimiento `sp_generar_nomina` |
+| Resumen de nómina por departamento | Totales de devengado, deducciones y neto | Vista `v_resumen_nomina` |
+| Costo laboral para la empresa | Devengado más aportes y prestaciones | Vista `v_costo_laboral` |
+| Ver comprobante de pago | Comprobante imprimible por empleado y periodo | Vista `v_comprobante` |
+| Exportar comprobante a CSV | Guarda el comprobante en un archivo | Vista `v_comprobante` |
+
+### Flujo de uso recomendado
+
+1. Crea los departamentos y cargos que falten (o importa los datos de prueba).
+2. Registra empleados, asistencia y ausencias.
+3. Calcula la nómina del periodo.
+4. Consulta el resumen, el costo laboral y los comprobantes.
+
+### Ejemplo de comprobante
+
+```
+========================================================
+        Empresa Ficticia S.A.S.  NIT 900000000-1
+      COMPROBANTE DE PAGO CP-202609-0003 [EMITIDO]
+========================================================
+Empleado : Marta Ruiz (doc. 1003)
+Cargo    : Asesor comercial - Ventas
+Periodo  : 2026-09-01 a 2026-09-30   Días pagados: 28
+...
+Total devengado                               1,555.63
+Total deducciones                               113.26
+NETO A PAGAR                                  1,442.37
+========================================================
+```
+
+### Arquitectura de la aplicación
+
+La aplicación está en capas: `main.py` (interacción con el usuario), `services.py` (operaciones del sistema), `reportes.py` (presentación) y `db.py` (conexión y transacciones). Ninguna fórmula de nómina está en Python.
+
+## Modelo de datos
+
+```mermaid
+erDiagram
+    departamentos ||--o{ empleados : tiene
+    cargos ||--o{ empleados : define
+    empleados ||--o{ contratos : firma
+    empleados ||--o{ asistencia : registra
+    empleados ||--o{ ausencias : solicita
+    empleados ||--o{ usuarios : accede
+    periodos_nomina ||--o{ nominas : agrupa
+    empleados ||--o{ nominas : recibe
+    nominas ||--o{ detalle_nomina : contiene
+    nominas ||--o{ provisiones_nomina : provisiona
+    nominas ||--|| comprobantes : genera
+    conceptos_nomina ||--o{ detalle_nomina : clasifica
+    conceptos_nomina ||--o{ provisiones_nomina : clasifica
+```
+
+Tablas independientes: `parametros`, `empresa` y `auditoria`.
+
+| Tabla | Descripción |
+|---|---|
+| `departamentos`, `cargos` | Catálogos de la organización; cada cargo tiene un rango salarial. |
+| `empleados` | Datos personales y laborales. Se usa baja lógica (`activo`). |
+| `contratos` | Historial de contratos y salarios. El vigente tiene `fecha_fin` nula. |
+| `asistencia` | Entradas, salidas y horas extra por día. |
+| `ausencias` | Vacaciones, permisos e incapacidades con estado y marca de pago. |
+| `parametros` | Valores editables: recargos, auxilio, salario mínimo, días base de prestaciones. |
+| `conceptos_nomina` | Catálogo de devengos, deducciones, provisiones y aportes del empleador. |
+| `periodos_nomina` | Periodos con estado: abierto, calculado o cerrado. |
+| `nominas` | Una fila por empleado y periodo con totales y neto. |
+| `detalle_nomina` | Valor de cada devengo y deducción, guardado como historial. |
+| `provisiones_nomina` | Prestaciones sociales y aportes del empleador. |
+| `comprobantes` | Comprobante de pago con número, fechas y estado. |
+| `usuarios`, `auditoria` | Usuarios de la aplicación y bitácora de cambios. |
+
+Vistas: `v_empleados_activos`, `v_desprendible`, `v_comprobante`, `v_resumen_nomina`, `v_prestaciones`, `v_costo_laboral`, `v_ausencias_pendientes` y `v_horas_extra_mes`.
+
+## Cálculo de la nómina
+
+El procedimiento `sp_generar_nomina(periodo)` es repetible: recalcula el periodo completo mientras no esté cerrado, dentro de una transacción.
+
+| Concepto | Fórmula |
+|---|---|
+| Días pagados | Días del contrato dentro del periodo (máximo 30) menos las ausencias aprobadas sin pago |
+| Salario proporcional | `salario / 30 * días pagados` |
+| Horas extra | `horas * (salario / 30 / 8) * (1 + recargo / 100)` |
+| Auxilio de transporte | `auxilio / 30 * días pagados`, solo si el salario no supera el tope |
+| Deducción | `MAX(0, base salarial - base exenta) * porcentaje / 100` |
+| Neto | `devengado - deducciones` |
+| Cesantías, prima, vacaciones | `base * días pagados * (días de la prestación al año / 30) / días base del año` |
+| Intereses sobre cesantías | `cesantías * días pagados * (porcentaje anual / 100) / días base del año` |
+| Aportes del empleador | `base salarial * porcentaje / 100` |
+
+La base salarial es el devengado sin el auxilio de transporte. Las prestaciones son una **provisión mensual**, no una liquidación final de contrato.
+
+Cambiar una regla sin tocar el código:
+
+```sql
+UPDATE parametros SET valor = 35 WHERE clave = 'RECARGO_HORA_EXTRA';
+CALL sp_generar_nomina(2);
+```
+
+## Seguridad y roles
+
+`nomina_rrhh.sql` crea tres roles y un usuario de ejemplo para cada uno:
+
+| Rol | Usuario | Permisos |
+|---|---|---|
+| `rol_admin` | `admin_nomina` | Todos los privilegios sobre la base de datos |
+| `rol_rrhh` | `rrhh_nomina` | Gestiona empleados, contratos, asistencia y ausencias; consulta nómina y ejecuta el cálculo |
+| `rol_empleado` | `empleado_nomina` | Consulta de desprendible y comprobante |
+
+> **Importante:** las contraseñas incluidas en los scripts son de demostración. Cámbialas antes de usar el sistema fuera de un entorno de pruebas.
+
+Notas sobre permisos desde Python:
+- `rrhh_nomina` solo puede **leer** departamentos y cargos. Para crearlos desde el menú usa `root` o `admin_nomina`, o concede el permiso una vez como administrador:
+  ```sql
+  GRANT INSERT ON nomina_rrhh.departamentos TO rol_rrhh;
+  GRANT INSERT ON nomina_rrhh.cargos TO rol_rrhh;
+  ```
+- `rrhh_nomina` no puede cerrar periodos ni modificar parámetros.
+- El rol de empleado ve la vista completa; una interfaz de producción debe filtrar por el documento del usuario conectado.
+
+## Scripts académicos
+
+La carpeta `scripts_academicos/` separa el mismo sistema por categoría de comandos SQL, para estudiar la estructura:
+
+| Script | Categoría | Contenido |
+|---|---|---|
+| `01_crear_base_datos.sql` | Creación | Crea la base de datos |
+| `02_datos_ficticios.sql` | Datos | Llena las tablas con datos de prueba |
+| `03_ddl.sql` | DDL | Tablas, índices, triggers y procedimiento |
+| `04_dml.sql` | DML | INSERT, UPDATE, DELETE y cálculo de nómina |
+| `05_dql.sql` | DQL | Consultas SELECT para reportes |
+| `06_vdl.sql` | VDL | Definición de vistas |
+| `07_dcl.sql` | DCL | Roles, usuarios, GRANT y REVOKE |
+| `08_tcl.sql` | TCL | Transacciones, COMMIT, ROLLBACK y SAVEPOINT |
+
+El orden de ejecución es **01, 03, 02, 06, 04, 05, 07, 08**, porque las tablas deben existir antes de llenarse. Desde la consola de MariaDB, `00_ejecutar_todo.sql` los ejecuta en ese orden con `SOURCE`.
+
+## Solución de problemas
+
+| Mensaje o síntoma | Causa probable | Solución |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'pymysql'` | La librería no está instalada en el Python que ejecuta el programa | `python -m pip install PyMySQL`, con el entorno virtual activado si lo usas |
+| `Access denied for user 'rrhh_nomina'` | El usuario no existe o la contraseña no coincide | Usa `root` con contraseña vacía, o revisa que se haya ejecutado la sección de seguridad de `nomina_rrhh.sql` |
+| `Can't connect to MySQL server` | MySQL no está iniciado o el puerto es otro | Inicia MySQL en XAMPP y confirma el puerto (normalmente 3306) |
+| `Unknown database 'nomina_rrhh'` | No se importó `nomina_rrhh.sql` | Importa el archivo desde phpMyAdmin |
+| Las listas de departamentos, cargos o periodos salen vacías | Faltan los datos iniciales | Importa `insert_sistema_nomina.sql` o crea los registros desde el menú |
+| Error de permiso al crear departamentos o cargos | `rrhh_nomina` solo tiene lectura | Usa `root` o `admin_nomina`, o concede el `GRANT INSERT` indicado arriba |
+| No aparece ningún comprobante | La nómina del periodo aún no se calculó | Usa la opción «Calcular nómina de un periodo» |
+
+## Limitaciones y mejoras futuras
+
+- Los valores monetarios (salario mínimo, auxilio de transporte) son **ficticios**, en la escala de los datos de prueba.
+- Los porcentajes de aportes y prestaciones siguen un esquema general y son editables. Si tu proyecto debe cumplir una norma laboral específica, verifica y ajusta `parametros` y `conceptos_nomina`.
+- Las prestaciones son una provisión mensual, no una liquidación final de contrato, y no promedian las horas extra dentro de su base.
+- La aplicación Python no crea periodos de nómina; se cargan con los datos iniciales o directamente en la base.
+- Los scripts están pensados para una base recién creada: repetir solo una parte sobre datos existentes puede producir errores de claves duplicadas.
+- Un periodo en estado `CERRADO` no se puede recalcular.
+
+Ideas para crecer: interfaz web con Flask, interfaz de escritorio con Tkinter, comprobante en PDF, creación de periodos desde la aplicación, liquidación final de contrato y análisis de la nómina con pandas.
+
+## Autor
+
+Nombre del autor: _completar_
 
 ## Licencia
 
-Este proyecto se distribuye bajo licencia MIT. Véase el archivo [LICENSE](LICENSE).
+Proyecto con fines académicos. Define aquí la licencia que prefieras, por ejemplo MIT.
